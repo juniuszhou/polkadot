@@ -39,7 +39,7 @@ use polkadot_primitives::{
 };
 use polkadot_validation::{
 	SharedTable, TableRouter, Network as ParachainNetwork, Validated, GenericStatement, Collators,
-	SignedStatement,
+	SignedStatement, Statement,
 };
 use sc_network::{ObservedRole, Event, PeerId};
 use sp_api::ProvideRuntimeApi;
@@ -1400,6 +1400,7 @@ impl<N: NetworkServiceOps> Service<N> {
 				}
 			})
 			.flatten_stream()
+			.take_while(|x| future::ready(!matches!(x.statement, Statement::Candidate(_))))
 	}
 }
 
