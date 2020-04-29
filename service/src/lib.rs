@@ -41,7 +41,7 @@ pub use sc_client::{ExecutionStrategy, CallExecutor, Client};
 pub use sc_client_api::backend::Backend;
 pub use sp_api::{Core as CoreApi, ConstructRuntimeApi, ProvideRuntimeApi, StateBackend};
 pub use sp_runtime::traits::{HashFor, NumberFor};
-pub use consensus_common::{block_validation::BlockAnnounceValidator, SelectChain};
+pub use consensus_common::SelectChain;
 pub use polkadot_primitives::parachain::{CollatorId, ParachainHost};
 pub use polkadot_primitives::Block;
 pub use sp_runtime::traits::{Block as BlockT, self as runtime_traits, BlakeTwo256};
@@ -233,9 +233,6 @@ pub fn polkadot_new_full(
 	authority_discovery_enabled: bool,
 	slot_duration: u64,
 	grandpa_pause: Option<(u32, u32)>,
-	block_announce_validator_builder:
-		Option<Box<dyn FnOnce(Arc<service::TFullClient<Block, polkadot_runtime::RuntimeApi,
-			PolkadotExecutor>>) -> Box<dyn BlockAnnounceValidator<Block> + Send> + Send + 'static>>,
 )
 	-> Result<(
 		impl AbstractService<
@@ -255,7 +252,6 @@ pub fn polkadot_new_full(
 		authority_discovery_enabled,
 		slot_duration,
 		grandpa_pause,
-		block_announce_validator_builder,
 	)
 }
 
@@ -268,9 +264,6 @@ pub fn kusama_new_full(
 	authority_discovery_enabled: bool,
 	slot_duration: u64,
 	grandpa_pause: Option<(u32, u32)>,
-	block_announce_validator_builder:
-		Option<Box<dyn FnOnce(Arc<service::TFullClient<Block, kusama_runtime::RuntimeApi,
-			KusamaExecutor>>) -> Box<dyn BlockAnnounceValidator<Block> + Send> + Send + 'static>>,
 )
 	-> Result<(
 		impl AbstractService<
@@ -290,7 +283,6 @@ pub fn kusama_new_full(
 		authority_discovery_enabled,
 		slot_duration,
 		grandpa_pause,
-		block_announce_validator_builder,
 	)
 }
 
@@ -303,9 +295,6 @@ pub fn westend_new_full(
 	authority_discovery_enabled: bool,
 	slot_duration: u64,
 	grandpa_pause: Option<(u32, u32)>,
-	block_announce_validator_builder:
-		Option<Box<dyn FnOnce(Arc<service::TFullClient<Block, westend_runtime::RuntimeApi,
-			KusamaExecutor>>) -> Box<dyn BlockAnnounceValidator<Block> + Send> + Send + 'static>>,
 )
 	-> Result<(
 		impl AbstractService<
@@ -325,7 +314,6 @@ pub fn westend_new_full(
 		authority_discovery_enabled,
 		slot_duration,
 		grandpa_pause,
-		block_announce_validator_builder,
 	)
 }
 
@@ -349,8 +337,6 @@ pub fn new_full<Runtime, Dispatch, Extrinsic>(
 	authority_discovery_enabled: bool,
 	slot_duration: u64,
 	grandpa_pause: Option<(u32, u32)>,
-	block_announce_validator_builder: Option<Box<dyn FnOnce(Arc<service::TFullClient<Block, Runtime,
-		Dispatch>>) -> Box<dyn BlockAnnounceValidator<Block> + Send> + Send + 'static>>,
 )
 	-> Result<(
 		impl AbstractService<
@@ -389,13 +375,9 @@ pub fn new_full<Runtime, Dispatch, Extrinsic>(
 	let authority_discovery_enabled = authority_discovery_enabled;
 	let slot_duration = slot_duration;
 
-	let (mut builder, mut import_setup, inherent_data_providers) = new_full_start!(config, Runtime, Dispatch);
+	let (builder, mut import_setup, inherent_data_providers) = new_full_start!(config, Runtime, Dispatch);
 
 	let backend = builder.backend().clone();
-
-	if let Some(f) = block_announce_validator_builder {
-		builder = builder.with_block_announce_validator(f)?;
-	}
 
 	let service = builder
 		.with_finality_proof_provider(|client, backend| {

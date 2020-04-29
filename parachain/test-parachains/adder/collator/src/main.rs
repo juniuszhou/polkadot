@@ -136,12 +136,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let cli = Cli::from_iter(&["-dev"]);
 	let runner = cli.create_runner(&cli.run.base)?;
 	runner.async_run(|config| {
-		collator::start_collator_polkadot(
+		collator::start_collator(
 			context,
 			id,
 			key,
 			config,
-			None,
 		).map_err(|e| e.into())
 	})?;
 

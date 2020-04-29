@@ -193,7 +193,6 @@ where
 			authority_discovery_enabled,
 			6000,
 			grandpa_pause,
-			None,
 		).map(|(s, _)| s),
 		D::native_version().runtime_version,
 	)
