@@ -27,6 +27,7 @@ sc-client = { git = "https://github.com/paritytech/substrate", branch = "cecton-
 sp-blockchain = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-api = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 wasm-timer = "0.2.4"
+stream-cancel = "0.5"
 
 [dev-dependencies]
 sp-keyring = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }

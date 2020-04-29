@@ -29,6 +29,7 @@ use futures::prelude::*;
 use futures::task::{Spawn, SpawnExt, Context, Poll};
 use futures::stream::{FuturesUnordered, StreamFuture};
 use log::{debug, trace};
+use stream_cancel::{StreamExt, Tripwire};
 
 use polkadot_primitives::{
 	Hash, Block,
@@ -483,6 +484,7 @@ struct ProtocolHandler {
 	local_collations: crate::legacy::local_collations::LocalCollations<Collation>,
 	config: Config,
 	local_keys: RecentValidatorIds,
+	running_topics: HashMap<Hash, Vec<stream_cancel::Trigger>>,
 }
 
 impl ProtocolHandler {
@@ -499,6 +501,7 @@ impl ProtocolHandler {
 			local_collations: Default::default(),
 			local_keys: Default::default(),
 			config,
+			running_topics: HashMap::new(),
 		}
 	}
 
@@ -796,6 +799,9 @@ impl ProtocolHandler {
 	fn drop_consensus_networking(&mut self, relay_parent: &Hash) {
 		// this triggers an abort of the background task.
 		self.consensus_instances.remove(relay_parent);
+
+		// drop the triggers. this will stop the checked_statements stream for that topic
+		self.running_topics.remove(relay_parent);
 	}
 }
 
@@ -991,15 +997,23 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 				self.protocol_handler.distribute_our_collation(targets, collation);
 			}
 			ServiceToWorkerMsg::ListenCheckedStatements(relay_parent, sender) => {
+				let (trigger, tripwire) = Tripwire::new();
+
+				if let Some(running_topic) = self.protocol_handler.running_topics.get_mut(&relay_parent) {
+					running_topic.push(trigger);
+				} else {
+					self.protocol_handler.running_topics.insert(relay_parent, vec![trigger]);
+				}
+
 				let topic = crate::legacy::gossip::attestation_topic(relay_parent);
 				let checked_messages = self.gossip_handle.gossip_messages_for(topic)
-					.filter_map(|msg| match msg.0 {
-						GossipMessage::Statement(s) => future::ready(Some(s.signed_statement)),
-						_ => future::ready(None),
-					})
-					.boxed();
+						.filter_map(|msg| match msg.0 {
+							GossipMessage::Statement(s) => future::ready(Some(s.signed_statement)),
+							_ => future::ready(None),
+						})
+						.take_until(tripwire);
 
-				let _ = sender.send(checked_messages);
+				let _ = sender.send(checked_messages.boxed());
 			}
 			#[cfg(test)]
 			ServiceToWorkerMsg::Synchronize(callback) => {
