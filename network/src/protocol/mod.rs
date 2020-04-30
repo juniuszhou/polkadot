@@ -1016,7 +1016,7 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 						.take_until(async move {
 							assert!(tripwire.await);
 							futures_timer::Delay::new(COLLECT_GARBAGE_INTERVAL).await;
-							true
+							false
 						});
 
 				let _ = sender.send(checked_messages.boxed());
