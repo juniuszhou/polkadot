@@ -997,6 +997,8 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 				self.protocol_handler.distribute_our_collation(targets, collation);
 			}
 			ServiceToWorkerMsg::ListenCheckedStatements(relay_parent, sender) => {
+				const COLLECT_GARBAGE_INTERVAL: Duration = Duration::from_secs(5);
+
 				let (trigger, tripwire) = Tripwire::new();
 
 				if let Some(running_topic) = self.protocol_handler.running_topics.get_mut(&relay_parent) {
@@ -1011,7 +1013,11 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 							GossipMessage::Statement(s) => future::ready(Some(s.signed_statement)),
 							_ => future::ready(None),
 						})
-						.take_until(tripwire);
+						.take_until(async move {
+							assert!(tripwire.await);
+							futures_timer::Delay::new(COLLECT_GARBAGE_INTERVAL).await;
+							true
+						});
 
 				let _ = sender.send(checked_messages.boxed());
 			}
