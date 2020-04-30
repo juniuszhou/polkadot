@@ -1019,7 +1019,7 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 							println!("tripwire 1");
 							futures_timer::Delay::new(COLLECT_GARBAGE_INTERVAL).await;
 							println!("tripwire 2");
-							true
+							false
 						});
 
 				let _ = sender.send(checked_messages.boxed());
