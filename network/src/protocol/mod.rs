@@ -997,7 +997,7 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 				self.protocol_handler.distribute_our_collation(targets, collation);
 			}
 			ServiceToWorkerMsg::ListenCheckedStatements(relay_parent, sender) => {
-				const COLLECT_GARBAGE_INTERVAL: Duration = Duration::from_secs(5);
+				const COLLECT_GARBAGE_INTERVAL: Duration = Duration::from_secs(30);
 
 				let (trigger, tripwire) = Tripwire::new();
 
