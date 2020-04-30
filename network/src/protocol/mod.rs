@@ -1012,14 +1012,6 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 						.filter_map(|msg| match msg.0 {
 							GossipMessage::Statement(s) => future::ready(Some(s.signed_statement)),
 							_ => future::ready(None),
-						})
-						.take_until(async move {
-							println!("tripwire 0");
-							assert!(tripwire.await);
-							println!("tripwire 1");
-							futures_timer::Delay::new(COLLECT_GARBAGE_INTERVAL).await;
-							println!("tripwire 2");
-							false
 						});
 
 				let _ = sender.send(checked_messages.boxed());
