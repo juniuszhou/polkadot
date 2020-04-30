@@ -1014,8 +1014,11 @@ impl<Api, Sp, Gossip> Worker<Api, Sp, Gossip> where
 							_ => future::ready(None),
 						})
 						.take_until(async move {
-							tripwire.await;
+							println!("tripwire 0");
+							assert!(tripwire.await);
+							println!("tripwire 1");
 							futures_timer::Delay::new(COLLECT_GARBAGE_INTERVAL).await;
+							println!("tripwire 2");
 							true
 						});
 
