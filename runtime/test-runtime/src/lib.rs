@@ -29,9 +29,9 @@ use primitives::{
 use runtime_common::{attestations, claims, parachains, registrar, slots,
 	impls::{CurrencyToVoteHandler, TargetedFeeAdjustment},
 	BlockHashCount, MaximumBlockWeight, AvailableBlockRatio,
-	MaximumBlockLength,
+	MaximumBlockLength, BlockExecutionWeight, ExtrinsicBaseWeight,
 };
-
+use sp_core::sr25519;
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
 	ApplyExtrinsicResult, Perbill, Perquintill, RuntimeDebug, KeyTypeId,
@@ -41,7 +41,7 @@ use sp_runtime::{
 	curve::PiecewiseLinear,
 	traits::{
 		BlakeTwo256, Block as BlockT, StaticLookup, SignedExtension, OpaqueKeys, ConvertInto,
-		DispatchInfoOf, Extrinsic as ExtrinsicT, SaturatedConversion,
+		DispatchInfoOf, Extrinsic as ExtrinsicT, SaturatedConversion, Verify,
 	},
 };
 use version::RuntimeVersion;
@@ -56,7 +56,6 @@ use frame_support::{
 };
 use pallet_transaction_payment_rpc_runtime_api::RuntimeDispatchInfo;
 use session::historical as session_historical;
-use system::offchain::TransactionSubmitter;
 
 #[cfg(feature = "std")]
 pub use staking::StakerStatus;
@@ -69,6 +68,8 @@ pub use parachains::Call as ParachainsCall;
 
 /// Constant values used within the runtime.
 pub mod constants;
+#[cfg(feature = "std")]
+pub mod genesismap;
 use constants::{time::*, currency::*, fee::*};
 
 // Make the WASM binary available.
@@ -80,7 +81,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("polkadot-test-runtime"),
 	impl_name: create_runtime_str!("parity-polkadot-test-runtime"),
 	authoring_version: 2,
-	spec_version: 1050,
+	spec_version: 1051,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -142,6 +143,8 @@ impl system::Trait for Runtime {
 	type BlockHashCount = BlockHashCount;
 	type MaximumBlockWeight = MaximumBlockWeight;
 	type DbWeight = ();
+	type BlockExecutionWeight = BlockExecutionWeight;
+	type ExtrinsicBaseWeight = ExtrinsicBaseWeight;
 	type MaximumBlockLength = MaximumBlockLength;
 	type AvailableBlockRatio = AvailableBlockRatio;
 	type Version = Version;
@@ -149,6 +152,13 @@ impl system::Trait for Runtime {
 	type AccountData = balances::AccountData<Balance>;
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
+}
+
+impl<C> system::offchain::SendTransactionTypes<C> for Runtime where
+	Call: From<C>,
+{
+	type OverarchingCall = Call;
+	type Extrinsic = UncheckedExtrinsic;
 }
 
 parameter_types! {
@@ -188,7 +198,6 @@ impl balances::Trait for Runtime {
 }
 
 parameter_types! {
-	pub const TransactionBaseFee: Balance = 1 * CENTS;
 	pub const TransactionByteFee: Balance = 10 * MILLICENTS;
 	// for a sane configuration, this should always be less than `AvailableBlockRatio`.
 	pub const TargetBlockFullness: Perquintill = Perquintill::from_percent(25);
@@ -197,14 +206,13 @@ parameter_types! {
 impl transaction_payment::Trait for Runtime {
 	type Currency = Balances;
 	type OnTransactionPayment = ();
-	type TransactionBaseFee = TransactionBaseFee;
 	type TransactionByteFee = TransactionByteFee;
 	type WeightToFee = WeightToFee;
 	type FeeMultiplierUpdate = TargetedFeeAdjustment<TargetBlockFullness, Self>;
 }
 
 parameter_types! {
-	pub const MinimumPeriod: u64 = SLOT_DURATION / 2;
+	pub const MinimumPeriod: u64 = 0;
 }
 impl timestamp::Trait for Runtime {
 	type Moment = u64;
@@ -280,6 +288,7 @@ parameter_types! {
 	pub const MaxNominatorRewardedPerValidator: u32 = 64;
 	pub const ElectionLookahead: BlockNumber = 0;
 	pub const StakingUnsignedPriority: TransactionPriority = TransactionPriority::max_value() / 2;
+	pub const MaxIterations: u32 = 10;
 }
 
 impl staking::Trait for Runtime {
@@ -301,8 +310,8 @@ impl staking::Trait for Runtime {
 	type NextNewSession = Session;
 	type ElectionLookahead = ElectionLookahead;
 	type Call = Call;
-	type SubmitTransaction = system::offchain::TransactionSubmitter<(), Runtime, Extrinsic>;
 	type UnsignedPriority = StakingUnsignedPriority;
+	type MaxIterations = MaxIterations;
 }
 
 impl grandpa::Trait for Runtime {
@@ -329,6 +338,7 @@ parameter_types! {
 }
 
 impl parachains::Trait for Runtime {
+	type AuthorityId = FishermanAuthorityId;
 	type Origin = Origin;
 	type Call = Call;
 	type ParachainCurrency = Balances;
@@ -350,17 +360,22 @@ impl parachains::Trait for Runtime {
 		>::IdentificationTuple;
 	type ReportOffence = Offences;
 	type BlockHashConversion = sp_runtime::traits::Identity;
-	type SubmitSignedTransaction = TransactionSubmitter<parachain::FishermanId, Runtime, UncheckedExtrinsic>;
 }
 
-impl system::offchain::CreateTransaction<Runtime, UncheckedExtrinsic> for Runtime {
-	type Public = <primitives::Signature as sp_runtime::traits::Verify>::Signer;
-	type Signature = primitives::Signature;
+pub struct FishermanAuthorityId;
+impl system::offchain::AppCrypto<<Signature as Verify>::Signer, Signature> for FishermanAuthorityId {
+	type RuntimeAppPublic = parachain::FishermanId;
+	type GenericSignature = sr25519::Signature;
+	type GenericPublic = sr25519::Public;
+}
 
-	fn create_transaction<TSigner: system::offchain::Signer<Self::Public, Self::Signature>>(
-		call: <UncheckedExtrinsic as ExtrinsicT>::Call,
-		public: Self::Public,
-		account: <Runtime as system::Trait>::AccountId,
+impl<LocalCall> system::offchain::CreateSignedTransaction<LocalCall> for Runtime where
+	Call: From<LocalCall>,
+{
+	fn create_transaction<C: system::offchain::AppCrypto<Self::Public, Self::Signature>>(
+		call: Call,
+		public: <Signature as Verify>::Signer,
+		account: AccountId,
 		nonce: <Runtime as system::Trait>::Index,
 	) -> Option<(Call, <UncheckedExtrinsic as ExtrinsicT>::SignaturePayload)> {
 		let period = BlockHashCount::get()
@@ -384,13 +399,20 @@ impl system::offchain::CreateTransaction<Runtime, UncheckedExtrinsic> for Runtim
 			parachains::ValidateDoubleVoteReports::<Runtime>::new(),
 		);
 		let raw_payload = SignedPayload::new(call, extra).map_err(|e| {
-			debug::warn!("Unable to create signed payload: {:?}", e)
+			debug::warn!("Unable to create signed payload: {:?}", e);
 		}).ok()?;
-		let signature = TSigner::sign(public, &raw_payload)?;
+		let signature = raw_payload.using_encoded(|payload| {
+			C::sign(payload, public)
+		})?;
 		let (call, extra, _) = raw_payload.deconstruct();
 		let address = Indices::unlookup(account);
 		Some((call, (address, signature, extra)))
 	}
+}
+
+impl system::offchain::SigningTypes for Runtime {
+	type Public = <Signature as Verify>::Signer;
+	type Signature = Signature;
 }
 
 impl offences::Trait for Runtime {
@@ -626,19 +648,19 @@ sp_api::impl_runtime_apis! {
 	}
 
 	impl babe_primitives::BabeApi<Block> for Runtime {
-		fn configuration() -> babe_primitives::BabeConfiguration {
+		fn configuration() -> babe_primitives::BabeGenesisConfiguration {
 			// The choice of `c` parameter (where `1 - c` represents the
 			// probability of a slot being empty), is done in accordance to the
 			// slot duration and expected target block time, for safely
 			// resisting network delays of maximum two seconds.
 			// <https://research.web3.foundation/en/latest/polkadot/BABE/Babe/#6-practical-results>
-			babe_primitives::BabeConfiguration {
+			babe_primitives::BabeGenesisConfiguration {
 				slot_duration: Babe::slot_duration(),
 				epoch_length: EpochDuration::get(),
 				c: PRIMARY_PROBABILITY,
 				genesis_authorities: Babe::authorities(),
 				randomness: Babe::randomness(),
-				secondary_slots: true,
+				allowed_slots: babe_primitives::AllowedSlots::PrimaryAndSecondaryPlainSlots,
 			}
 		}
 

@@ -1,6 +1,6 @@
 [package]
 name = "polkadot-service"
-version = "0.7.30"
+version = "0.7.32-dev"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 
@@ -25,11 +25,11 @@ sp-api = { git = "https://github.com/paritytech/substrate", branch = "cecton-kee
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-blockchain = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-core = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
-sc-client = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-client-api = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-client-db = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-chain-spec = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-executor = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
+sc-consensus = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-network = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 consensus_common = { package = "sp-consensus", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 grandpa = { package = "sc-finality-grandpa", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
@@ -37,6 +37,7 @@ grandpa_primitives = { package = "sp-finality-grandpa", git = "https://github.co
 inherents = { package = "sp-inherents", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 service = { package = "sc-service", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks", default-features = false }
 telemetry = { package = "sc-telemetry", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
+sc-block-builder = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-transaction-pool = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-transaction-pool = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-keystore = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
@@ -59,6 +60,7 @@ frame-benchmarking = { git = "https://github.com/paritytech/substrate", branch =
 [dev-dependencies]
 polkadot-test-runtime-client = { path = "../runtime/test-runtime/client" }
 sc-block-builder = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
+env_logger = "0.7.0"
 
 [features]
 default = ["db", "full-node"]

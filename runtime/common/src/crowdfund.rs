@@ -71,7 +71,6 @@ use frame_support::{
 	traits::{
 		Currency, Get, OnUnbalanced, WithdrawReason, ExistenceRequirement::AllowDeath
 	},
-	weights::{MINIMUM_WEIGHT, SimpleDispatchInfo},
 };
 use system::ensure_signed;
 use sp_runtime::{ModuleId,
@@ -80,10 +79,7 @@ use sp_runtime::{ModuleId,
 use crate::slots;
 use codec::{Encode, Decode};
 use sp_std::vec::Vec;
-use sp_core::storage::well_known_keys::CHILD_STORAGE_KEY_PREFIX;
 use primitives::parachain::{Id as ParaId, HeadData};
-
-const MODULE_ID: ModuleId = ModuleId(*b"py/cfund");
 
 pub type BalanceOf<T> =
 	<<T as slots::Trait>::Currency as Currency<<T as system::Trait>::AccountId>>::Balance;
@@ -93,6 +89,9 @@ pub type NegativeImbalanceOf<T> =
 
 pub trait Trait: slots::Trait {
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
+
+	/// ModuleID for the crowdfund module. An appropriate value could be ```ModuleId(*b"py/cfund")```
+	type ModuleId: Get<ModuleId>;
 
 	/// The amount to be held on deposit by the owner of a crowdfund.
 	type SubmissionDeposit: Get<BalanceOf<Self>>;
@@ -248,10 +247,12 @@ decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		type Error = Error<T>;
 
+		const ModuleId: ModuleId = T::ModuleId::get();
+
 		fn deposit_event() = default;
 
 		/// Create a new crowdfunding campaign for a parachain slot deposit for the current auction.
-		#[weight = SimpleDispatchInfo::FixedNormal(100_000_000)]
+		#[weight = 100_000_000]
 		fn create(origin,
 			#[compact] cap: BalanceOf<T>,
 			#[compact] first_slot: T::BlockNumber,
@@ -295,7 +296,7 @@ decl_module! {
 		/// Contribute to a crowd sale. This will transfer some balance over to fund a parachain
 		/// slot. It will be withdrawable in two instances: the parachain becomes retired; or the
 		/// slot is unable to be purchased and the timeout expires.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn contribute(origin, #[compact] index: FundIndex, #[compact] value: BalanceOf<T>) {
 			let who = ensure_signed(origin)?;
 
@@ -354,7 +355,7 @@ decl_module! {
 		/// - `index` is the fund index that `origin` owns and whose deploy data will be set.
 		/// - `code_hash` is the hash of the parachain's Wasm validation function.
 		/// - `initial_head_data` is the parachain's initial head data.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn fix_deploy_data(origin,
 			#[compact] index: FundIndex,
 			code_hash: T::Hash,
@@ -380,7 +381,7 @@ decl_module! {
 		///
 		/// - `index` is the fund index that `origin` owns and whose deploy data will be set.
 		/// - `para_id` is the parachain index that this fund won.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn onboard(origin,
 			#[compact] index: FundIndex,
 			#[compact] para_id: ParaId
@@ -409,7 +410,7 @@ decl_module! {
 		}
 
 		/// Note that a successful fund has lost its parachain slot, and place it into retirement.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn begin_retirement(origin, #[compact] index: FundIndex) {
 			let _ = ensure_signed(origin)?;
 
@@ -431,7 +432,7 @@ decl_module! {
 		}
 
 		/// Withdraw full balance of a contributor to an unsuccessful or off-boarded fund.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn withdraw(origin, #[compact] index: FundIndex) {
 			let who = ensure_signed(origin)?;
 
@@ -462,7 +463,7 @@ decl_module! {
 		/// Remove a fund after either: it was unsuccessful and it timed out; or it was successful
 		/// but it has been retired from its parachain slot. This places any deposits that were not
 		/// withdrawn into the treasury.
-		#[weight = SimpleDispatchInfo::FixedNormal(MINIMUM_WEIGHT)]
+		#[weight = 0]
 		fn dissolve(origin, #[compact] index: FundIndex) {
 			let _ = ensure_signed(origin)?;
 
@@ -526,49 +527,33 @@ impl<T: Trait> Module<T> {
 	/// This actually does computation. If you need to keep using it, then make sure you cache the
 	/// value and only call this once.
 	pub fn fund_account_id(index: FundIndex) -> T::AccountId {
-		MODULE_ID.into_sub_account(index)
+		T::ModuleId::get().into_sub_account(index)
 	}
 
-	pub fn id_from_index(index: FundIndex) -> Vec<u8> {
+	pub fn id_from_index(index: FundIndex) -> child::ChildInfo {
 		let mut buf = Vec::new();
 		buf.extend_from_slice(b"crowdfund");
 		buf.extend_from_slice(&index.to_le_bytes()[..]);
-
-		CHILD_STORAGE_KEY_PREFIX.into_iter()
-			.chain(b"default:")
-			.chain(T::Hashing::hash(&buf[..]).as_ref().into_iter())
-			.cloned()
-			.collect()
-	}
-
-	/// Child trie unique id for a crowdfund is built from the hash part of the fund id.
-	pub fn trie_unique_id(fund_id: &[u8]) -> child::ChildInfo {
-		let start = CHILD_STORAGE_KEY_PREFIX.len() + b"default:".len();
-		child::ChildInfo::new_default(&fund_id[start..])
+		child::ChildInfo::new_default(T::Hashing::hash(&buf[..]).as_ref())
 	}
 
 	pub fn contribution_put(index: FundIndex, who: &T::AccountId, balance: &BalanceOf<T>) {
-		let id = Self::id_from_index(index);
-		who.using_encoded(|b| child::put(id.as_ref(), Self::trie_unique_id(id.as_ref()), b, balance));
+		who.using_encoded(|b| child::put(&Self::id_from_index(index), b, balance));
 	}
 
 	pub fn contribution_get(index: FundIndex, who: &T::AccountId) -> BalanceOf<T> {
-		let id = Self::id_from_index(index);
 		who.using_encoded(|b| child::get_or_default::<BalanceOf<T>>(
-			id.as_ref(),
-			Self::trie_unique_id(id.as_ref()),
+			&Self::id_from_index(index),
 			b,
 		))
 	}
 
 	pub fn contribution_kill(index: FundIndex, who: &T::AccountId) {
-		let id = Self::id_from_index(index);
-		who.using_encoded(|b| child::kill(id.as_ref(), Self::trie_unique_id(id.as_ref()), b));
+		who.using_encoded(|b| child::kill(&Self::id_from_index(index), b));
 	}
 
 	pub fn crowdfund_kill(index: FundIndex) {
-		let id = Self::id_from_index(index);
-		child::kill_storage(id.as_ref(), Self::trie_unique_id(id.as_ref()));
+		child::kill_storage(&Self::id_from_index(index));
 	}
 }
 
@@ -621,6 +606,8 @@ mod tests {
 		type BlockHashCount = BlockHashCount;
 		type MaximumBlockWeight = MaximumBlockWeight;
 		type DbWeight = ();
+		type BlockExecutionWeight = ();
+		type ExtrinsicBaseWeight = ();
 		type MaximumBlockLength = MaximumBlockLength;
 		type AvailableBlockRatio = AvailableBlockRatio;
 		type Version = ();
@@ -649,6 +636,7 @@ mod tests {
 		pub const TipFindersFee: Percent = Percent::from_percent(20);
 		pub const TipReportDepositBase: u64 = 1;
 		pub const TipReportDepositPerByte: u64 = 1;
+		pub const TreasuryModuleId: ModuleId = ModuleId(*b"py/trsry");
 	}
 	pub struct Nobody;
 	impl Contains<u64> for Nobody {
@@ -672,6 +660,7 @@ mod tests {
 		type TipFindersFee = TipFindersFee;
 		type TipReportDepositBase = TipReportDepositBase;
 		type TipReportDepositPerByte = TipReportDepositPerByte;
+		type ModuleId = TreasuryModuleId;
 	}
 
 	thread_local! {
@@ -746,6 +735,7 @@ mod tests {
 		pub const SubmissionDeposit: u64 = 1;
 		pub const MinContribution: u64 = 10;
 		pub const RetirementPeriod: u64 = 5;
+		pub const CrowdfundModuleId: ModuleId = ModuleId(*b"py/cfund");
 	}
 	impl Trait for Test {
 		type Event = ();
@@ -753,6 +743,7 @@ mod tests {
 		type MinContribution = MinContribution;
 		type RetirementPeriod = RetirementPeriod;
 		type OrphanedFunds = Treasury;
+		type ModuleId = CrowdfundModuleId;
 	}
 
 	type System = system::Module<Test>;

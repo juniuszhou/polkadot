@@ -1,13 +1,14 @@
 [package]
 name = "polkadot-collator"
-version = "0.7.30"
+version = "0.7.32-dev"
 authors = ["Parity Technologies <admin@parity.io>"]
 description = "Collator node implementation"
 edition = "2018"
 
 [dependencies]
 futures = "0.3.4"
-sc-client = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
+sc-service = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
+sc-executor = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-cli = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-client-api = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sc-network = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }

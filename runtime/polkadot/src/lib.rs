@@ -23,7 +23,7 @@
 use runtime_common::{attestations, claims, parachains, registrar, slots,
 	impls::{CurrencyToVoteHandler, TargetedFeeAdjustment, ToAuthor},
 	NegativeImbalance, BlockHashCount, MaximumBlockWeight, AvailableBlockRatio,
-	MaximumBlockLength,
+	MaximumBlockLength, BlockExecutionWeight, ExtrinsicBaseWeight,
 };
 
 use sp_std::prelude::*;
@@ -34,7 +34,7 @@ use primitives::{
 	parachain::{self, ActiveParas, AbridgedCandidateReceipt, SigningContext}, ValidityError,
 };
 use sp_runtime::{
-	create_runtime_str, generic, impl_opaque_keys,
+	create_runtime_str, generic, impl_opaque_keys, ModuleId,
 	ApplyExtrinsicResult, KeyTypeId, Percent, Permill, Perbill, Perquintill, RuntimeDebug,
 	transaction_validity::{
 		TransactionValidity, InvalidTransaction, TransactionValidityError, TransactionSource, TransactionPriority,
@@ -43,6 +43,7 @@ use sp_runtime::{
 	traits::{
 		BlakeTwo256, Block as BlockT, SignedExtension, OpaqueKeys, ConvertInto,
 		DispatchInfoOf, IdentityLookup, Extrinsic as ExtrinsicT, SaturatedConversion,
+		Verify,
 	},
 };
 #[cfg(feature = "runtime-benchmarks")]
@@ -55,13 +56,13 @@ use sp_core::OpaqueMetadata;
 use sp_staking::SessionIndex;
 use frame_support::{
 	parameter_types, construct_runtime, debug,
-	traits::{KeyOwnerProofSystem, SplitTwoWays, Randomness},
+	traits::{KeyOwnerProofSystem, SplitTwoWays, Randomness, LockIdentifier},
+  weights::RuntimeDbWeight,
 };
 use im_online::sr25519::AuthorityId as ImOnlineId;
 use authority_discovery_primitives::AuthorityId as AuthorityDiscoveryId;
-use system::offchain::TransactionSubmitter;
 use transaction_payment_rpc_runtime_api::RuntimeDispatchInfo;
-use session::{historical as session_historical};
+use session::historical as session_historical;
 
 #[cfg(feature = "std")]
 pub use staking::StakerStatus;
@@ -86,7 +87,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("polkadot"),
 	impl_name: create_runtime_str!("parity-polkadot"),
 	authoring_version: 2,
-	spec_version: 1007,
+	spec_version: 1008,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
@@ -137,6 +138,13 @@ parameter_types! {
 	pub const Version: RuntimeVersion = VERSION;
 }
 
+parameter_types! {
+	pub const DbWeight: RuntimeDbWeight = RuntimeDbWeight {
+		read: 60_000_000,
+		write: 200_000_000,
+	};
+}
+
 impl system::Trait for Runtime {
 	type Origin = Origin;
 	type Call = Call;
@@ -150,7 +158,9 @@ impl system::Trait for Runtime {
 	type Event = Event;
 	type BlockHashCount = BlockHashCount;
 	type MaximumBlockWeight = MaximumBlockWeight;
-	type DbWeight = ();
+	type DbWeight = DbWeight;
+	type BlockExecutionWeight = BlockExecutionWeight;
+	type ExtrinsicBaseWeight = ExtrinsicBaseWeight;
 	type MaximumBlockLength = MaximumBlockLength;
 	type AvailableBlockRatio = AvailableBlockRatio;
 	type Version = Version;
@@ -212,7 +222,6 @@ impl balances::Trait for Runtime {
 }
 
 parameter_types! {
-	pub const TransactionBaseFee: Balance = 1 * CENTS;
 	pub const TransactionByteFee: Balance = 10 * MILLICENTS;
 	// for a sane configuration, this should always be less than `AvailableBlockRatio`.
 	pub const TargetBlockFullness: Perquintill = Perquintill::from_percent(25);
@@ -221,7 +230,6 @@ parameter_types! {
 impl transaction_payment::Trait for Runtime {
 	type Currency = Balances;
 	type OnTransactionPayment = DealWithFees;
-	type TransactionBaseFee = TransactionBaseFee;
 	type TransactionByteFee = TransactionByteFee;
 	type WeightToFee = WeightToFee;
 	type FeeMultiplierUpdate = TargetedFeeAdjustment<TargetBlockFullness, Self>;
@@ -305,6 +313,7 @@ parameter_types! {
 	pub const MaxNominatorRewardedPerValidator: u32 = 64;
 	// quarter of the last session will be for election.
 	pub const ElectionLookahead: BlockNumber = EPOCH_DURATION_IN_BLOCKS / 4;
+	pub const MaxIterations: u32 = 5;
 }
 
 impl staking::Trait for Runtime {
@@ -326,8 +335,8 @@ impl staking::Trait for Runtime {
 	type NextNewSession = Session;
 	type ElectionLookahead = ElectionLookahead;
 	type Call = Call;
-	type SubmitTransaction = TransactionSubmitter<(), Runtime, UncheckedExtrinsic>;
 	type UnsignedPriority = StakingUnsignedPriority;
+	type MaxIterations = MaxIterations;
 }
 
 parameter_types! {
@@ -394,6 +403,7 @@ parameter_types! {
 	/// 13 members initially, to be increased to 23 eventually.
 	pub const DesiredMembers: u32 = 13;
 	pub const DesiredRunnersUp: u32 = 20;
+	pub const ElectionsPhragmenModuleId: LockIdentifier = *b"phrelect";
 }
 
 impl elections_phragmen::Trait for Runtime {
@@ -410,6 +420,7 @@ impl elections_phragmen::Trait for Runtime {
 	type DesiredMembers = DesiredMembers;
 	type DesiredRunnersUp = DesiredRunnersUp;
 	type TermDuration = TermDuration;
+	type ModuleId = ElectionsPhragmenModuleId;
 }
 
 parameter_types! {
@@ -440,6 +451,7 @@ parameter_types! {
 	pub const ProposalBondMinimum: Balance = 100 * DOLLARS;
 	pub const SpendPeriod: BlockNumber = 24 * DAYS;
 	pub const Burn: Permill = Permill::from_percent(1);
+	pub const TreasuryModuleId: ModuleId = ModuleId(*b"py/trsry");
 
 	pub const TipCountdown: BlockNumber = 1 * DAYS;
 	pub const TipFindersFee: Percent = Percent::from_percent(20);
@@ -462,6 +474,7 @@ impl treasury::Trait for Runtime {
 	type ProposalBondMinimum = ProposalBondMinimum;
 	type SpendPeriod = SpendPeriod;
 	type Burn = Burn;
+	type ModuleId = TreasuryModuleId;
 }
 
 impl offences::Trait for Runtime {
@@ -471,8 +484,6 @@ impl offences::Trait for Runtime {
 }
 
 impl authority_discovery::Trait for Runtime {}
-
-type SubmitTransaction = TransactionSubmitter<ImOnlineId, Runtime, UncheckedExtrinsic>;
 
 parameter_types! {
 	pub const SessionDuration: BlockNumber = EPOCH_DURATION_IN_BLOCKS as _;
@@ -486,8 +497,6 @@ parameter_types! {
 impl im_online::Trait for Runtime {
 	type AuthorityId = ImOnlineId;
 	type Event = Event;
-	type Call = Call;
-	type SubmitTransaction = SubmitTransaction;
 	type SessionDuration = SessionDuration;
 	type ReportUnresponsiveness = Offences;
 	type UnsignedPriority = ImOnlineUnsignedPriority;
@@ -528,6 +537,7 @@ parameter_types! {
 }
 
 impl parachains::Trait for Runtime {
+	type AuthorityId = parachains::FishermanAuthorityId;
 	type Origin = Origin;
 	type Call = Call;
 	type ParachainCurrency = Balances;
@@ -547,17 +557,15 @@ impl parachains::Trait for Runtime {
 	type IdentificationTuple = <Self::KeyOwnerProofSystem as KeyOwnerProofSystem<(KeyTypeId, Vec<u8>)>>::IdentificationTuple;
 	type ReportOffence = Offences;
 	type BlockHashConversion = sp_runtime::traits::Identity;
-	type SubmitSignedTransaction = TransactionSubmitter<parachain::FishermanId, Runtime, UncheckedExtrinsic>;
 }
 
-impl system::offchain::CreateTransaction<Runtime, UncheckedExtrinsic> for Runtime {
-	type Public = <primitives::Signature as sp_runtime::traits::Verify>::Signer;
-	type Signature = primitives::Signature;
-
-	fn create_transaction<TSigner: system::offchain::Signer<Self::Public, Self::Signature>>(
-		call: <UncheckedExtrinsic as ExtrinsicT>::Call,
-		public: Self::Public,
-		account: <Runtime as system::Trait>::AccountId,
+impl<LocalCall> system::offchain::CreateSignedTransaction<LocalCall> for Runtime where
+	Call: From<LocalCall>,
+{
+	fn create_transaction<C: system::offchain::AppCrypto<Self::Public, Self::Signature>>(
+		call: Call,
+		public: <Signature as Verify>::Signer,
+		account: AccountId,
 		nonce: <Runtime as system::Trait>::Index,
 	) -> Option<(Call, <UncheckedExtrinsic as ExtrinsicT>::SignaturePayload)> {
 		let period = BlockHashCount::get()
@@ -581,12 +589,26 @@ impl system::offchain::CreateTransaction<Runtime, UncheckedExtrinsic> for Runtim
 			parachains::ValidateDoubleVoteReports::<Runtime>::new(),
 		);
 		let raw_payload = SignedPayload::new(call, extra).map_err(|e| {
-			debug::warn!("Unable to create signed payload: {:?}", e)
+			debug::warn!("Unable to create signed payload: {:?}", e);
 		}).ok()?;
-		let signature = TSigner::sign(public, &raw_payload)?;
+		let signature = raw_payload.using_encoded(|payload| {
+			C::sign(payload, public)
+		})?;
 		let (call, extra, _) = raw_payload.deconstruct();
 		Some((call, (account, signature, extra)))
 	}
+}
+
+impl system::offchain::SigningTypes for Runtime {
+	type Public = <Signature as Verify>::Signer;
+	type Signature = Signature;
+}
+
+impl<C> system::offchain::SendTransactionTypes<C> for Runtime where
+	Call: From<C>,
+{
+	type OverarchingCall = Call;
+	type Extrinsic = UncheckedExtrinsic;
 }
 
 parameter_types! {
@@ -839,19 +861,19 @@ sp_api::impl_runtime_apis! {
 	}
 
 	impl babe_primitives::BabeApi<Block> for Runtime {
-		fn configuration() -> babe_primitives::BabeConfiguration {
+		fn configuration() -> babe_primitives::BabeGenesisConfiguration {
 			// The choice of `c` parameter (where `1 - c` represents the
 			// probability of a slot being empty), is done in accordance to the
 			// slot duration and expected target block time, for safely
 			// resisting network delays of maximum two seconds.
 			// <https://research.web3.foundation/en/latest/polkadot/BABE/Babe/#6-practical-results>
-			babe_primitives::BabeConfiguration {
+			babe_primitives::BabeGenesisConfiguration {
 				slot_duration: Babe::slot_duration(),
 				epoch_length: EpochDuration::get(),
 				c: PRIMARY_PROBABILITY,
 				genesis_authorities: Babe::authorities(),
 				randomness: Babe::randomness(),
-				secondary_slots: true,
+				allowed_slots: babe_primitives::AllowedSlots::PrimaryAndSecondaryPlainSlots,
 			}
 		}
 
@@ -905,10 +927,31 @@ sp_api::impl_runtime_apis! {
 			repeat: u32,
 		) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, RuntimeString> {
 			use frame_benchmarking::{Benchmarking, BenchmarkBatch, add_benchmark};
+			// Trying to add benchmarks directly to the Session Pallet caused cyclic dependency issues.
+			// To get around that, we separated the Session benchmarks into its own crate, which is why
+			// we need these two lines below.
+			use pallet_session_benchmarking::Module as SessionBench;
+			use pallet_offences_benchmarking::Module as OffencesBench;
+
+			impl pallet_session_benchmarking::Trait for Runtime {}
+			impl pallet_offences_benchmarking::Trait for Runtime {}
 
 			let mut batches = Vec::<BenchmarkBatch>::new();
 			let params = (&pallet, &benchmark, &lowest_range_values, &highest_range_values, &steps, repeat);
+			// Polkadot
 			add_benchmark!(params, batches, b"claims", Claims);
+			// Substrate
+			add_benchmark!(params, batches, b"balances", Balances);
+			add_benchmark!(params, batches, b"collective", Council);
+			add_benchmark!(params, batches, b"democracy", Democracy);
+			add_benchmark!(params, batches, b"im-online", ImOnline);
+			add_benchmark!(params, batches, b"offences", OffencesBench::<Runtime>);
+			add_benchmark!(params, batches, b"session", SessionBench::<Runtime>);
+			add_benchmark!(params, batches, b"staking", Staking);
+			add_benchmark!(params, batches, b"timestamp", Timestamp);
+			add_benchmark!(params, batches, b"treasury", Treasury);
+			add_benchmark!(params, batches, b"vesting", Vesting);
+
 			if batches.is_empty() { return Err("Benchmark not found for this pallet.".into()) }
 			Ok(batches)
 		}

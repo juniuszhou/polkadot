@@ -1,7 +1,7 @@
 [package]
 name = "polkadot-availability-store"
 description = "Persistent database for parachain data"
-version = "0.7.30"
+version = "0.7.32-dev"
 authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 
@@ -18,7 +18,6 @@ codec = { package = "parity-scale-codec", version = "1.3.0", features = ["derive
 sc-network = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 consensus_common = { package = "sp-consensus", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 client = { package = "sc-client-api", git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
-sc-client = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-runtime = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-blockchain = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
 sp-api = { git = "https://github.com/paritytech/substrate", branch = "cecton-keep-unpinned-para-blocks" }
